@@ -19,6 +19,7 @@ import {
   Radio,
   Send,
   ShieldCheck,
+  Settings,
   Speaker,
   VolumeX,
   Wrench,
@@ -123,6 +124,8 @@ const replyFor = (command: string) => {
   return `Command acknowledged: “${command}”. I have processed it with my usual discretion and only a trace of concern.`;
 };
 
+const DEFAULT_VOICE_ID = "saKBjKSb4DQcbYpRdPTc";
+
 function nowStamp() {
   return new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
@@ -134,17 +137,32 @@ function JarvisTerminal() {
   const [logs, setLogs] = useState<LogItem[]>(bootLogs);
   const [command, setCommand] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [voiceId, setVoiceId] = useState(DEFAULT_VOICE_ID);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Transmission | null>(null);
   const [devices, setDevices] = useState<Record<DeviceKey, boolean>>({ lab: true, grid: true, air: true, dock: false });
   const timers = useRef<number[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const coreRef = useRef<HTMLButtonElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const rafRef = useRef(0);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("jarvis-voice-id");
+    if (saved) setVoiceId(saved);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("jarvis-voice-id", voiceId);
+  }, [voiceId]);
 
   const addLog = (kind: LogKind, text: string) => {
     setLogs((current) => [...current, { id: Date.now() + Math.random(), time: nowStamp(), kind, text }]);
   };
 
-  const speak = (text: string) => {
-    if (!voiceEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const speakBrowser = (text: string) => new Promise<void>((resolve) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return resolve();
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     const voices = window.speechSynthesis.getVoices();
@@ -153,7 +171,61 @@ function JarvisTerminal() {
     if (preferred) utterance.voice = preferred;
     utterance.rate = 0.92;
     utterance.pitch = 0.82;
+    utterance.onend = () => resolve();
+    utterance.onerror = () => resolve();
     window.speechSynthesis.speak(utterance);
+  });
+
+  const stopAudio = () => {
+    cancelAnimationFrame(rafRef.current);
+    try { sourceRef.current?.stop(); } catch { /* already stopped */ }
+    sourceRef.current = null;
+    coreRef.current?.style.setProperty("--audio-level", "0");
+    setSpeaking(false);
+  };
+
+  /** Plays ElevenLabs audio and drives the core pulse from the live audio level. Resolves when playback ends. */
+  const speak = async (text: string): Promise<void> => {
+    if (!voiceEnabled || typeof window === "undefined") return;
+    stopAudio();
+    try {
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voiceId: voiceId.trim() || DEFAULT_VOICE_ID }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const buffer = await response.arrayBuffer();
+      const ctx = audioCtxRef.current ?? new AudioContext();
+      audioCtxRef.current = ctx;
+      if (ctx.state === "suspended") await ctx.resume();
+      const audio = await ctx.decodeAudioData(buffer);
+      const source = ctx.createBufferSource();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.buffer = audio;
+      source.connect(analyser).connect(ctx.destination);
+      sourceRef.current = source;
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const v of data) { const d = (v - 128) / 128; sum += d * d; }
+        const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
+        coreRef.current?.style.setProperty("--audio-level", level.toFixed(3));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      await new Promise<void>((resolve) => {
+        source.onended = () => { stopAudio(); resolve(); };
+        setSpeaking(true);
+        source.start();
+        tick();
+      });
+    } catch (error) {
+      console.error("ElevenLabs voice unavailable, using browser voice", error);
+      stopAudio();
+      await speakBrowser(text);
+    }
   };
 
   useEffect(() => {
@@ -171,6 +243,8 @@ function JarvisTerminal() {
       window.clearInterval(telemetry);
       timers.current.forEach(window.clearTimeout);
       window.speechSynthesis?.cancel();
+      cancelAnimationFrame(rafRef.current);
+      try { sourceRef.current?.stop(); } catch { /* noop */ }
     };
   }, []);
 
@@ -178,18 +252,22 @@ function JarvisTerminal() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [logs]);
 
+  const respond = async (response: string) => {
+    setCoreState("responding");
+    addLog("jarvis", response);
+    if (voiceEnabled) await speak(response);
+    else await new Promise((r) => timers.current.push(window.setTimeout(r, 1600)));
+    setCoreState("idle");
+  };
+
   const activateCore = () => {
     if (coreState !== "idle") return;
     setCoreState("listening");
     addLog("system", "Voice channel open. Listening for command...");
     timers.current.push(window.setTimeout(() => setCoreState("thinking"), 2600));
     timers.current.push(window.setTimeout(() => {
-      const response = "All home systems are operating within normal parameters. No threats detected, though the refrigerator appears to be plotting something.";
-      setCoreState("responding");
-      addLog("jarvis", response);
-      speak(response);
+      void respond("All home systems are operating within normal parameters. No threats detected, though the refrigerator appears to be plotting something.");
     }, 4700));
-    timers.current.push(window.setTimeout(() => setCoreState("idle"), 7600));
   };
 
   const submitCommand = (event: FormEvent) => {
@@ -199,13 +277,7 @@ function JarvisTerminal() {
     addLog("user", trimmed);
     setCommand("");
     setCoreState("thinking");
-    timers.current.push(window.setTimeout(() => {
-      const response = replyFor(trimmed);
-      addLog("jarvis", response);
-      setCoreState("responding");
-      speak(response);
-      timers.current.push(window.setTimeout(() => setCoreState("idle"), 1600));
-    }, 900));
+    timers.current.push(window.setTimeout(() => void respond(replyFor(trimmed)), 900));
   };
 
   const toggleDevice = (key: DeviceKey, name: string, nextValue: boolean) => {
@@ -248,7 +320,17 @@ function JarvisTerminal() {
               variant="outline"
               size="icon"
               className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:text-primary"
-              onClick={() => setVoiceEnabled((enabled) => !enabled)}
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Voice settings"
+              title="Voice settings"
+            >
+              <Settings />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:text-primary"
+              onClick={() => { if (voiceEnabled) stopAudio(); setVoiceEnabled((enabled) => !enabled); }}
               aria-label={voiceEnabled ? "Disable voice output" : "Enable voice output"}
               title={voiceEnabled ? "Voice output on" : "Voice output off"}
             >
@@ -293,7 +375,7 @@ function JarvisTerminal() {
           <Panel title="NEURAL COMMAND INTERFACE" code="CORE.ACTIVE" icon={<Mic />} className="overflow-visible">
             <div className="grid items-center gap-6 py-3 xl:grid-cols-[240px_1fr]">
               <div className="flex flex-col items-center">
-                <button className={`jarvis-core core-${coreState}`} onClick={activateCore} disabled={coreState !== "idle"} aria-label="Activate J.A.R.V.I.S. voice core">
+                <button ref={coreRef} className={`jarvis-core core-${coreState}${speaking ? " core-speaking" : ""}`} onClick={activateCore} disabled={coreState !== "idle"} aria-label="Activate J.A.R.V.I.S. voice core">
                   <span className="core-orbit core-orbit-one" />
                   <span className="core-orbit core-orbit-two" />
                   <span className="core-radar" />
@@ -386,6 +468,28 @@ function JarvisTerminal() {
           </DialogHeader>
           <div className="my-2 border-y border-border/70 py-6 text-sm leading-7 text-foreground">{selectedMessage?.body}</div>
           <div className="flex items-center justify-between text-[9px] text-muted-foreground"><span>END OF TRANSMISSION</span><span className="text-success">SIGNATURE VERIFIED</span></div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="border-primary/40 bg-popover/95 font-mono text-popover-foreground shadow-glow-lg backdrop-blur-2xl sm:rounded-none">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg text-primary">VOICE SETTINGS</DialogTitle>
+            <DialogDescription className="font-mono text-[10px] text-muted-foreground">ElevenLabs voice used for all J.A.R.V.I.S. speech.</DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2 text-xs">
+            <span className="text-muted-foreground">VOICE ID</span>
+            <input
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              placeholder={DEFAULT_VOICE_ID}
+              className="border border-primary/40 bg-background/60 px-3 py-2 text-primary outline-none focus:border-primary"
+            />
+          </label>
+          <div className="flex justify-between gap-2">
+            <Button variant="outline" className="border-primary/30 text-primary" onClick={() => setVoiceId(DEFAULT_VOICE_ID)}>Reset to default</Button>
+            <Button onClick={() => { setSettingsOpen(false); void speak("Voice calibration complete, sir."); }}>Test voice</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </main>

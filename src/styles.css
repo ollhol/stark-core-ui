@@ -130,3 +130,7 @@
 
 @media (max-width: 420px) { .jarvis-core { width: 160px; height: 160px; }.core-center { inset: 57px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+
+/* Audio-reactive core: --audio-level (0-1) is driven live from the playing voice */
+.core-speaking .core-center { animation: none; transform: scale(calc(1 + var(--audio-level, 0) * 0.35)); box-shadow: 0 0 calc(20px + var(--audio-level, 0) * 60px) color-mix(in oklab, var(--accent) 70%, transparent), inset 0 0 18px color-mix(in oklab, var(--accent) 30%, transparent); transition: transform 50ms linear, box-shadow 50ms linear; }
+.core-speaking { filter: drop-shadow(0 0 calc(20px + var(--audio-level, 0) * 40px) color-mix(in oklab, var(--accent) 55%, transparent)); }
