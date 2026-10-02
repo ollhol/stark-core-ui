@@ -20,7 +20,7 @@ import {
   Send,
   ShieldCheck,
   Speaker,
-  SpeakerX,
+  VolumeX,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -252,7 +252,7 @@ function JarvisTerminal() {
               aria-label={voiceEnabled ? "Disable voice output" : "Enable voice output"}
               title={voiceEnabled ? "Voice output on" : "Voice output off"}
             >
-              {voiceEnabled ? <Speaker /> : <SpeakerX />}
+              {voiceEnabled ? <Speaker /> : <VolumeX />}
             </Button>
           </div>
         </div>
