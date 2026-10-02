@@ -184,48 +184,59 @@ function JarvisTerminal() {
     setSpeaking(false);
   };
 
-  /** Plays ElevenLabs audio and drives the core pulse from the live audio level. Resolves when playback ends. */
+  const fetchAudio = async (text: string): Promise<ArrayBuffer> => {
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, voiceId: voiceId.trim() || DEFAULT_VOICE_ID }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.arrayBuffer();
+  };
+
+  /** Plays audio and drives the core pulse from the live audio level. Resolves when playback ends. */
+  const playBuffer = async (buffer: ArrayBuffer): Promise<void> => {
+    const ctx = audioCtxRef.current ?? new AudioContext();
+    audioCtxRef.current = ctx;
+    if (ctx.state === "suspended") await ctx.resume();
+    const audio = await ctx.decodeAudioData(buffer);
+    const source = ctx.createBufferSource();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    source.buffer = audio;
+    source.connect(analyser).connect(ctx.destination);
+    sourceRef.current = source;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const v of data) { const d = (v - 128) / 128; sum += d * d; }
+      const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
+      coreRef.current?.style.setProperty("--audio-level", level.toFixed(3));
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    await new Promise<void>((resolve) => {
+      source.onended = () => { stopAudio(); resolve(); };
+      setSpeaking(true);
+      source.start();
+      tick();
+    });
+  };
+
+  /** Starts fetching audio immediately, plays it after the previous sentence finishes. */
+  const enqueueSpeech = (previous: Promise<void>, text: string): Promise<void> => {
+    if (!voiceEnabled || typeof window === "undefined") return previous;
+    const audio = fetchAudio(text);
+    audio.catch(() => undefined);
+    return previous.then(async () => {
+      try { await playBuffer(await audio); }
+      catch (error) { console.error("ElevenLabs voice unavailable, using browser voice", error); stopAudio(); await speakBrowser(text); }
+    });
+  };
+
   const speak = async (text: string): Promise<void> => {
-    if (!voiceEnabled || typeof window === "undefined") return;
     stopAudio();
-    try {
-      const response = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId: voiceId.trim() || DEFAULT_VOICE_ID }),
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const buffer = await response.arrayBuffer();
-      const ctx = audioCtxRef.current ?? new AudioContext();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") await ctx.resume();
-      const audio = await ctx.decodeAudioData(buffer);
-      const source = ctx.createBufferSource();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.buffer = audio;
-      source.connect(analyser).connect(ctx.destination);
-      sourceRef.current = source;
-      const data = new Uint8Array(analyser.frequencyBinCount);
-      const tick = () => {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (const v of data) { const d = (v - 128) / 128; sum += d * d; }
-        const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
-        coreRef.current?.style.setProperty("--audio-level", level.toFixed(3));
-        rafRef.current = requestAnimationFrame(tick);
-      };
-      await new Promise<void>((resolve) => {
-        source.onended = () => { stopAudio(); resolve(); };
-        setSpeaking(true);
-        source.start();
-        tick();
-      });
-    } catch (error) {
-      console.error("ElevenLabs voice unavailable, using browser voice", error);
-      stopAudio();
-      await speakBrowser(text);
-    }
+    await enqueueSpeech(Promise.resolve(), text);
   };
 
   useEffect(() => {
@@ -270,14 +281,66 @@ function JarvisTerminal() {
     }, 4700));
   };
 
+  /** Streams the OpenAI reply into the console and forwards each finished sentence to ElevenLabs. */
+  const askBrain = async (prompt: string) => {
+    setCoreState("thinking");
+    history.current = [...history.current, { role: "user" as const, content: prompt }].slice(-12);
+    const logId = Date.now() + Math.random();
+    let full = "";
+    let pending = "";
+    let started = false;
+    let speech: Promise<void> = Promise.resolve();
+    const enqueue = (sentence: string) => {
+      const text = sentence.replace(/[*_`#>]/g, "").trim();
+      if (!text) return;
+      speech = enqueueSpeech(speech, text);
+    };
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, messages: history.current }),
+      });
+      if (!response.ok || !response.body) throw new Error(await response.text());
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const token = decoder.decode(value, { stream: true });
+        full += token;
+        pending += token;
+        if (!started) {
+          started = true;
+          setCoreState("responding");
+          setLogs((current) => [...current, { id: logId, time: nowStamp(), kind: "jarvis", text: full }]);
+        } else {
+          setLogs((current) => current.map((l) => (l.id === logId ? { ...l, text: full } : l)));
+        }
+        const match = pending.match(/^([\s\S]*?[.!?…])(\s+)([\s\S]*)$/);
+        if (match) { enqueue(match[1]); pending = match[3]; }
+      }
+      enqueue(pending);
+      history.current = [...history.current, { role: "assistant" as const, content: full }];
+    } catch (error) {
+      console.error(error);
+      const message = "My apologies, Sir. The uplink to my higher reasoning appears to be down. Falling back to local wit: " + replyFor(prompt);
+      addLog("jarvis", message);
+      setCoreState("responding");
+      enqueue(message);
+    }
+    await speech;
+    if (!voiceEnabled) await new Promise((r) => timers.current.push(window.setTimeout(r, 1200)));
+    setCoreState("idle");
+  };
+
   const submitCommand = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = command.trim();
-    if (!trimmed) return;
+    if (!trimmed || coreState === "thinking") return;
     addLog("user", trimmed);
     setCommand("");
-    setCoreState("thinking");
-    timers.current.push(window.setTimeout(() => void respond(replyFor(trimmed)), 900));
+    void askBrain(trimmed);
   };
 
   const toggleDevice = (key: DeviceKey, name: string, nextValue: boolean) => {
