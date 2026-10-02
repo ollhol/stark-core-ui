@@ -320,7 +320,17 @@ function JarvisTerminal() {
               variant="outline"
               size="icon"
               className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:text-primary"
-              onClick={() => setVoiceEnabled((enabled) => !enabled)}
+              onClick={() => setSettingsOpen(true)}
+              aria-label="Voice settings"
+              title="Voice settings"
+            >
+              <Settings />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:text-primary"
+              onClick={() => { if (voiceEnabled) stopAudio(); setVoiceEnabled((enabled) => !enabled); }}
               aria-label={voiceEnabled ? "Disable voice output" : "Enable voice output"}
               title={voiceEnabled ? "Voice output on" : "Voice output off"}
             >
@@ -365,7 +375,7 @@ function JarvisTerminal() {
           <Panel title="NEURAL COMMAND INTERFACE" code="CORE.ACTIVE" icon={<Mic />} className="overflow-visible">
             <div className="grid items-center gap-6 py-3 xl:grid-cols-[240px_1fr]">
               <div className="flex flex-col items-center">
-                <button className={`jarvis-core core-${coreState}`} onClick={activateCore} disabled={coreState !== "idle"} aria-label="Activate J.A.R.V.I.S. voice core">
+                <button ref={coreRef} className={`jarvis-core core-${coreState}${speaking ? " core-speaking" : ""}`} onClick={activateCore} disabled={coreState !== "idle"} aria-label="Activate J.A.R.V.I.S. voice core">
                   <span className="core-orbit core-orbit-one" />
                   <span className="core-orbit core-orbit-two" />
                   <span className="core-radar" />
@@ -458,6 +468,28 @@ function JarvisTerminal() {
           </DialogHeader>
           <div className="my-2 border-y border-border/70 py-6 text-sm leading-7 text-foreground">{selectedMessage?.body}</div>
           <div className="flex items-center justify-between text-[9px] text-muted-foreground"><span>END OF TRANSMISSION</span><span className="text-success">SIGNATURE VERIFIED</span></div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="border-primary/40 bg-popover/95 font-mono text-popover-foreground shadow-glow-lg backdrop-blur-2xl sm:rounded-none">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg text-primary">VOICE SETTINGS</DialogTitle>
+            <DialogDescription className="font-mono text-[10px] text-muted-foreground">ElevenLabs voice used for all J.A.R.V.I.S. speech.</DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2 text-xs">
+            <span className="text-muted-foreground">VOICE ID</span>
+            <input
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              placeholder={DEFAULT_VOICE_ID}
+              className="border border-primary/40 bg-background/60 px-3 py-2 text-primary outline-none focus:border-primary"
+            />
+          </label>
+          <div className="flex justify-between gap-2">
+            <Button variant="outline" className="border-primary/30 text-primary" onClick={() => setVoiceId(DEFAULT_VOICE_ID)}>Reset to default</Button>
+            <Button onClick={() => { setSettingsOpen(false); void speak("Voice calibration complete, sir."); }}>Test voice</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </main>
