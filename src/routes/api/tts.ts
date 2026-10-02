@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/tts")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const apiKey = process.env.ELEVENLABS_API_KEY;
+        const apiKey = process.env["ELEVENLABS_API_KEY"];
         if (!apiKey) return new Response("Voice service is not connected", { status: 500 });
 
         const parsed = Body.safeParse(await request.json().catch(() => null));
