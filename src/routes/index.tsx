@@ -19,6 +19,7 @@ import {
   Radio,
   Send,
   ShieldCheck,
+  Settings,
   Speaker,
   VolumeX,
   Wrench,
@@ -122,6 +123,8 @@ const replyFor = (command: string) => {
   if (input.includes("lights")) return "Lighting controls are available in the home systems panel. A refreshingly low-risk request.";
   return `Command acknowledged: “${command}”. I have processed it with my usual discretion and only a trace of concern.`;
 };
+
+const DEFAULT_VOICE_ID = "saKBjKSb4DQcbYpRdPTc";
 
 function nowStamp() {
   return new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -240,6 +243,8 @@ function JarvisTerminal() {
       window.clearInterval(telemetry);
       timers.current.forEach(window.clearTimeout);
       window.speechSynthesis?.cancel();
+      cancelAnimationFrame(rafRef.current);
+      try { sourceRef.current?.stop(); } catch { /* noop */ }
     };
   }, []);
 
