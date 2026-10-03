@@ -282,10 +282,10 @@ function JarvisTerminal() {
     if (coreState !== "idle") return;
     setCoreState("listening");
     addLog("system", "Voice channel open. Listening for command...");
-    timers.current.push(window.setTimeout(() => setCoreState("thinking"), 2600));
-    timers.current.push(window.setTimeout(() => {
-      void respond("All home systems are operating within normal parameters. No threats detected, though the refrigerator appears to be plotting something.");
-    }, 4700));
+        timers.current.push(window.setTimeout(() => {
+      addLog("user", "[voice] Status report, please.");
+      void askBrain("Status report, please.");
+    }, 2600));
   };
 
   /** Streams the OpenAI reply into the console and forwards each finished sentence to ElevenLabs. */
