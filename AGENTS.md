@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Keep the J.A.R.V.I.S. terminal as a browser-first single-route dashboard; its simulated telemetry and controls do not require persistence.
+- AI replies stream from OpenAI via the /api/chat server route and voice via /api/tts (ElevenLabs); API keys stay server-side and are never stored in the browser.
