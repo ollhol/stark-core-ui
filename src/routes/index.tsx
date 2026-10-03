@@ -270,14 +270,6 @@ function JarvisTerminal() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [logs]);
 
-  const respond = async (response: string) => {
-    setCoreState("responding");
-    addLog("jarvis", response);
-    if (voiceEnabled) await speak(response);
-    else await new Promise((r) => timers.current.push(window.setTimeout(r, 1600)));
-    setCoreState("idle");
-  };
-
   const activateCore = () => {
     if (coreState !== "idle") return;
     setCoreState("listening");
@@ -325,7 +317,7 @@ function JarvisTerminal() {
           setLogs((current) => current.map((l) => (l.id === logId ? { ...l, text: full } : l)));
         }
         const match = pending.match(/^([\s\S]*?[.!?…])(\s+)([\s\S]*)$/);
-        if (match) { enqueue(match[1]); pending = match[3]; }
+        if (match) { enqueue(match[1] ?? ""); pending = match[3] ?? ""; }
       }
       enqueue(pending);
       history.current = [...history.current, { role: "assistant" as const, content: full }];
