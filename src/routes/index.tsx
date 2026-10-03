@@ -140,6 +140,13 @@ function JarvisTerminal() {
   const [voiceId, setVoiceId] = useState(DEFAULT_VOICE_ID);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [model, setModel] = useState<"gpt-4o-mini" | "gpt-4o">("gpt-4o-mini");
+  const history = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
+  useEffect(() => {
+    const saved = window.localStorage.getItem("jarvis-model");
+    if (saved === "gpt-4o" || saved === "gpt-4o-mini") setModel(saved);
+  }, []);
+  useEffect(() => { window.localStorage.setItem("jarvis-model", model); }, [model]);
   const [selectedMessage, setSelectedMessage] = useState<Transmission | null>(null);
   const [devices, setDevices] = useState<Record<DeviceKey, boolean>>({ lab: true, grid: true, air: true, dock: false });
   const timers = useRef<number[]>([]);
@@ -263,22 +270,14 @@ function JarvisTerminal() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [logs]);
 
-  const respond = async (response: string) => {
-    setCoreState("responding");
-    addLog("jarvis", response);
-    if (voiceEnabled) await speak(response);
-    else await new Promise((r) => timers.current.push(window.setTimeout(r, 1600)));
-    setCoreState("idle");
-  };
-
   const activateCore = () => {
     if (coreState !== "idle") return;
     setCoreState("listening");
     addLog("system", "Voice channel open. Listening for command...");
-    timers.current.push(window.setTimeout(() => setCoreState("thinking"), 2600));
-    timers.current.push(window.setTimeout(() => {
-      void respond("All home systems are operating within normal parameters. No threats detected, though the refrigerator appears to be plotting something.");
-    }, 4700));
+        timers.current.push(window.setTimeout(() => {
+      addLog("user", "[voice] Status report, please.");
+      void askBrain("Status report, please.");
+    }, 2600));
   };
 
   /** Streams the OpenAI reply into the console and forwards each finished sentence to ElevenLabs. */
@@ -318,7 +317,7 @@ function JarvisTerminal() {
           setLogs((current) => current.map((l) => (l.id === logId ? { ...l, text: full } : l)));
         }
         const match = pending.match(/^([\s\S]*?[.!?…])(\s+)([\s\S]*)$/);
-        if (match) { enqueue(match[1]); pending = match[3]; }
+        if (match) { enqueue(match[1] ?? ""); pending = match[3] ?? ""; }
       }
       enqueue(pending);
       history.current = [...history.current, { role: "assistant" as const, content: full }];
@@ -548,6 +547,17 @@ function JarvisTerminal() {
               placeholder={DEFAULT_VOICE_ID}
               className="border border-primary/40 bg-background/60 px-3 py-2 text-primary outline-none focus:border-primary"
             />
+          </label>
+          <div className="grid gap-2 text-xs">
+            <span className="text-muted-foreground">OPENAI_API_KEY</span>
+            <p className="border border-success/40 bg-background/60 px-3 py-2 text-success">● Stored securely on the server (encrypted, never sent to the browser)</p>
+          </div>
+          <label className="grid gap-2 text-xs">
+            <span className="text-muted-foreground">AI MODEL</span>
+            <select value={model} onChange={(e) => setModel(e.target.value as "gpt-4o-mini" | "gpt-4o")} className="border border-primary/40 bg-background/60 px-3 py-2 text-primary outline-none focus:border-primary">
+              <option value="gpt-4o-mini">gpt-4o-mini (fastest)</option>
+              <option value="gpt-4o">gpt-4o (smarter)</option>
+            </select>
           </label>
           <div className="flex justify-between gap-2">
             <Button variant="outline" className="border-primary/30 text-primary" onClick={() => setVoiceId(DEFAULT_VOICE_ID)}>Reset to default</Button>
