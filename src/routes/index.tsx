@@ -248,7 +248,12 @@ function JarvisTerminal() {
 
   useEffect(() => {
     setNow(new Date());
-    const clock = window.setInterval(() => setNow(new Date()), 1000);
+    let clockRaf = 0;
+    const tickClock = () => {
+      setNow(new Date());
+      clockRaf = window.requestAnimationFrame(tickClock);
+    };
+    clockRaf = window.requestAnimationFrame(tickClock);
     const telemetry = window.setInterval(() => {
       setMetrics((current) => ({
         cpu: Math.max(22, Math.min(78, current.cpu + Math.round(Math.random() * 10 - 5))),
