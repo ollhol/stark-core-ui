@@ -248,7 +248,12 @@ function JarvisTerminal() {
 
   useEffect(() => {
     setNow(new Date());
-    const clock = window.setInterval(() => setNow(new Date()), 1000);
+    let clockRaf = 0;
+    const tickClock = () => {
+      setNow(new Date());
+      clockRaf = window.requestAnimationFrame(tickClock);
+    };
+    clockRaf = window.requestAnimationFrame(tickClock);
     const telemetry = window.setInterval(() => {
       setMetrics((current) => ({
         cpu: Math.max(22, Math.min(78, current.cpu + Math.round(Math.random() * 10 - 5))),
@@ -257,7 +262,7 @@ function JarvisTerminal() {
       }));
     }, 2400);
     return () => {
-      window.clearInterval(clock);
+      window.cancelAnimationFrame(clockRaf);
       window.clearInterval(telemetry);
       timers.current.forEach(window.clearTimeout);
       window.speechSynthesis?.cancel();
@@ -398,7 +403,9 @@ function JarvisTerminal() {
   };
 
   const dateText = now?.toLocaleDateString("en-GB", { weekday: "long", day: "2-digit", month: "short", year: "numeric" }) ?? "Synchronizing date";
-  const timeText = now?.toLocaleTimeString("en-GB", { hour12: false }) ?? "--:--:--";
+  const timeText = now
+    ? `${now.toLocaleTimeString("en-GB", { hour12: false })}.${String(now.getMilliseconds()).padStart(3, "0")}`
+    : "--:--:--.---";
   const coreLabel = useMemo(() => ({ idle: "SYSTEM READY", listening: "LISTENING...", thinking: "PROCESSING...", responding: "RESPONSE SENT" })[coreState], [coreState]);
 
   return (
