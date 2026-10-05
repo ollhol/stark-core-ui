@@ -270,14 +270,64 @@ function JarvisTerminal() {
     logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [logs]);
 
+  const recognitionRef = useRef<any>(null);
+
   const activateCore = () => {
+    if (coreState === "listening") {
+      recognitionRef.current?.stop();
+      return;
+    }
     if (coreState !== "idle") return;
-    setCoreState("listening");
-    addLog("system", "Voice channel open. Listening for command...");
-        timers.current.push(window.setTimeout(() => {
-      addLog("user", "[voice] Status report, please.");
-      void askBrain("Status report, please.");
-    }, 2600));
+    const w = window as any;
+    const Recognition = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Recognition) {
+      addLog("system", "Voice recognition isn't supported in this browser. Please use Chrome, Edge or Safari, or type your command below.");
+      return;
+    }
+    const rec = new Recognition();
+    rec.lang = "en-GB";
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.maxAlternatives = 1;
+    let finalText = "";
+    let errored = false;
+    rec.onresult = (e: any) => {
+      let interim = "";
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      setCommand((finalText + interim).trim());
+    };
+    rec.onerror = (e: any) => {
+      errored = true;
+      const msg = e.error === "not-allowed" || e.error === "service-not-allowed"
+        ? "Microphone access denied, Sir. Please allow the microphone in your browser and try again."
+        : e.error === "no-speech" ? "I didn't catch anything, Sir. Tap the core and try again." : `Voice link error: ${e.error}.`;
+      addLog("system", msg);
+    };
+    rec.onend = () => {
+      recognitionRef.current = null;
+      const text = finalText.trim();
+      setCommand("");
+      if (text) {
+        addLog("user", `[voice] ${text}`);
+        void askBrain(text);
+      } else {
+        if (!errored) addLog("system", "No speech detected. Voice channel closed.");
+        setCoreState("idle");
+      }
+    };
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+      setCoreState("listening");
+      addLog("system", "Voice channel open. Listening... (tap the core again to finish)");
+    } catch {
+      recognitionRef.current = null;
+      addLog("system", "Unable to open the voice channel.");
+    }
   };
 
   /** Streams the OpenAI reply into the console and forwards each finished sentence to ElevenLabs. */
