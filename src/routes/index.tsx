@@ -432,7 +432,7 @@ function JarvisTerminal() {
               <span className="font-mono">ALL SYSTEMS NOMINAL</span>
             </div>
             <div className="text-right">
-              <p className="font-display text-xl text-primary tabular-nums text-glow sm:text-2xl">{timeText}</p>
+              <p className="font-mono text-xl font-semibold text-primary tabular-nums text-glow sm:text-2xl">{timeText}</p>
               <p className="font-mono text-[9px] uppercase text-muted-foreground sm:text-[10px]">{dateText}</p>
             </div>
             <Button
