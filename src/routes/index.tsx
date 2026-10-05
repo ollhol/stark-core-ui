@@ -262,7 +262,7 @@ function JarvisTerminal() {
       }));
     }, 2400);
     return () => {
-      window.clearInterval(clock);
+      window.cancelAnimationFrame(clockRaf);
       window.clearInterval(telemetry);
       timers.current.forEach(window.clearTimeout);
       window.speechSynthesis?.cancel();
