@@ -680,6 +680,27 @@ function JarvisTerminal() {
             </div>
           </Panel>
 
+          <Panel title="MUSIC SUBSYSTEM" code="AUD.09" icon={<Music />}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+                <span>{musicLabel ? `NOW LOADED · ${musicLabel}` : "SPOTIFY UPLINK"}</span>
+                <span className={spotifyReady ? "text-success" : "text-warning"}>{spotifyReady ? "● READY" : "● SYNCING"}</span>
+              </div>
+              <div ref={spotifyMountRef} className="min-h-[152px] w-full overflow-hidden border border-border/60 bg-console" />
+              <div className="grid grid-cols-2 gap-2">
+                {MUSIC_PRESETS.map((preset) => (
+                  <Button key={preset.id} variant="outline" className="h-9 border-border bg-secondary/30 font-mono text-[9px] text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary" onClick={() => playMusic(preset)}>
+                    <Play className="size-3" /> {preset.label}
+                  </Button>
+                ))}
+              </div>
+              <Button variant="outline" className="h-9 w-full border-primary/30 bg-primary/5 font-mono text-[10px] text-primary hover:bg-primary/15" onClick={toggleMusicPlayback}>
+                {musicPaused ? <Play className="size-3" /> : <Pause className="size-3" />} {musicPaused ? "RESUME" : "PAUSE"}
+              </Button>
+              <p className="font-mono text-[8px] leading-relaxed text-muted-foreground/70">Say “play some jazz” or “pause the music”. Full tracks play when you’re signed into Spotify in this browser; otherwise 30-second previews.</p>
+            </div>
+          </Panel>
+
           <Panel title="ENERGY PROFILE" code="PWR.03" icon={<Zap />}>
             <div className="relative mx-auto flex aspect-square max-w-[210px] items-center justify-center">
               <div className="energy-ring" />
