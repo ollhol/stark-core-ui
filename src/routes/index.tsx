@@ -15,7 +15,10 @@ import {
   MemoryStick,
   Mic,
   MicOff,
+  Music,
   Network,
+  Pause,
+  Play,
   Power,
   Radio,
   Send,
@@ -126,6 +129,27 @@ const replyFor = (command: string) => {
 };
 
 const DEFAULT_VOICE_ID = "saKBjKSb4DQcbYpRdPTc";
+
+type MusicPreset = { id: string; label: string; uri: string };
+const MUSIC_PRESETS: MusicPreset[] = [
+  { id: "acdc", label: "BACK IN BLACK", uri: "spotify:track:08mG3Y1vljYA6bvDt4Wqkj" },
+  { id: "focus", label: "DEEP FOCUS", uri: "spotify:playlist:37i9dQZF1DWZeKCadgRdKQ" },
+  { id: "jazz", label: "LATE NIGHT JAZZ", uri: "spotify:playlist:37i9dQZF1DXbITWG1ZJKYt" },
+  { id: "synth", label: "SYNTHWAVE", uri: "spotify:playlist:37i9dQZF1DXdLEN7aqioXM" },
+];
+
+type SpotifyController = {
+  loadUri: (uri: string) => void;
+  play: () => void;
+  pause: () => void;
+  togglePlay: () => void;
+  addListener: (event: string, cb: (e: { data: { isPaused: boolean; uri: string } }) => void) => void;
+};
+declare global {
+  interface Window {
+    onSpotifyIframeApiReady?: (api: { createController: (el: HTMLElement, opts: { uri: string; width: string; height: number }, cb: (c: SpotifyController) => void) => void }) => void;
+  }
+}
 
 function nowStamp() {
   return new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
