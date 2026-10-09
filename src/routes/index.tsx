@@ -15,7 +15,10 @@ import {
   MemoryStick,
   Mic,
   MicOff,
+  Music,
   Network,
+  Pause,
+  Play,
   Power,
   Radio,
   Send,
@@ -126,6 +129,27 @@ const replyFor = (command: string) => {
 };
 
 const DEFAULT_VOICE_ID = "saKBjKSb4DQcbYpRdPTc";
+
+type MusicPreset = { id: string; label: string; uri: string };
+const MUSIC_PRESETS: MusicPreset[] = [
+  { id: "acdc", label: "BACK IN BLACK", uri: "spotify:track:08mG3Y1vljYA6bvDt4Wqkj" },
+  { id: "focus", label: "DEEP FOCUS", uri: "spotify:playlist:37i9dQZF1DWZeKCadgRdKQ" },
+  { id: "jazz", label: "LATE NIGHT JAZZ", uri: "spotify:playlist:37i9dQZF1DXbITWG1ZJKYt" },
+  { id: "synth", label: "SYNTHWAVE", uri: "spotify:playlist:37i9dQZF1DXdLEN7aqioXM" },
+];
+
+type SpotifyController = {
+  loadUri: (uri: string) => void;
+  play: () => void;
+  pause: () => void;
+  togglePlay: () => void;
+  addListener: (event: string, cb: (e: { data: { isPaused: boolean; uri: string } }) => void) => void;
+};
+declare global {
+  interface Window {
+    onSpotifyIframeApiReady?: (api: { createController: (el: HTMLElement, opts: { uri: string; width: string; height: number }, cb: (c: SpotifyController) => void) => void }) => void;
+  }
+}
 
 function nowStamp() {
   return new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -282,6 +306,77 @@ function JarvisTerminal() {
   const askBrainRef = useRef<(p: string) => Promise<void>>(async () => {});
   const unsupportedRef = useRef(false);
 
+  // ---- Music subsystem (Spotify embed) ----
+  const spotifyMountRef = useRef<HTMLDivElement>(null);
+  const spotifyRef = useRef<SpotifyController | null>(null);
+  const [spotifyReady, setSpotifyReady] = useState(false);
+  const [musicPaused, setMusicPaused] = useState(true);
+  const [musicLabel, setMusicLabel] = useState<string | null>(null);
+  const musicLabelRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.onSpotifyIframeApiReady = (api) => {
+      if (!spotifyMountRef.current || spotifyRef.current) return;
+      api.createController(spotifyMountRef.current, { uri: MUSIC_PRESETS[0].uri, width: "100%", height: 152 }, (controller) => {
+        spotifyRef.current = controller;
+        setSpotifyReady(true);
+        controller.addListener("playback_update", (e) => setMusicPaused(e.data.isPaused));
+      });
+    };
+    if (!document.getElementById("spotify-iframe-api")) {
+      const script = document.createElement("script");
+      script.id = "spotify-iframe-api";
+      script.src = "https://open.spotify.com/embed/iframe-api/v1";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  const playMusic = (preset: MusicPreset) => {
+    const controller = spotifyRef.current;
+    if (!controller) { addLog("alert", "Music subsystem is still initialising, Sir. One moment."); return; }
+    controller.loadUri(preset.uri);
+    controller.play();
+    musicLabelRef.current = preset.label;
+    setMusicLabel(preset.label);
+    addLog("system", `Music subsystem: now playing ${preset.label}.`);
+  };
+
+  const toggleMusicPlayback = () => {
+    const controller = spotifyRef.current;
+    if (!controller) { addLog("alert", "Music subsystem is still initialising, Sir."); return; }
+    controller.togglePlay();
+    addLog("system", musicPaused ? "Resuming playback." : "Playback paused.");
+  };
+
+  /** Intercepts music voice/typed commands before they reach the AI brain. Returns true when handled. */
+  const handleMusicCommand = (raw: string): boolean => {
+    const text = raw.toLowerCase();
+    const wantsMusic = text.includes("music") || text.includes("song") || text.includes("play") || text.includes("spotify");
+    if (!wantsMusic) return false;
+    if (text.includes("pause") || text.includes("stop") || text.includes("quiet") || text.includes("silence")) {
+      spotifyRef.current?.pause();
+      addLog("user", raw);
+      addLog("system", "Playback paused, Sir.");
+      void speak("Pausing the music, Sir.");
+      return true;
+    }
+    if (text.includes("resume") || text.includes("unpause") || text.includes("continue")) {
+      spotifyRef.current?.play();
+      addLog("user", raw);
+      addLog("system", "Resuming playback.");
+      void speak("Resuming playback, Sir.");
+      return true;
+    }
+    const preset = MUSIC_PRESETS.find((p) => text.includes(p.id) || text.includes(p.label.toLowerCase().split(" ").pop() ?? ""));
+    const chosen = preset ?? MUSIC_PRESETS[0];
+    addLog("user", raw);
+    playMusic(chosen);
+    void speak(preset ? `Playing ${preset.label.toLowerCase()}, Sir.` : "Very good, Sir. A little Back in Black, I think.");
+    return true;
+  };
+
   // Always-on listening: open the mic whenever idle and not muted; close it while thinking/speaking so he doesn't hear himself.
   useEffect(() => {
     const busy = coreState === "thinking" || coreState === "responding" || speaking;
@@ -317,9 +412,11 @@ function JarvisTerminal() {
       if (text) {
         sent = true;
         setCommand("");
-        addLog("user", `[voice] ${text}`);
         try { rec.abort(); } catch { /* noop */ }
-        void askBrainRef.current(text);
+        if (!musicCmdRef.current(text)) {
+          addLog("user", `[voice] ${text}`);
+          void askBrainRef.current(text);
+        }
       }
     };
     rec.onerror = (e: any) => {
@@ -401,12 +498,16 @@ function JarvisTerminal() {
 
   askBrainRef.current = askBrain;
 
+  const musicCmdRef = useRef(handleMusicCommand);
+  musicCmdRef.current = handleMusicCommand;
+
   const submitCommand = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = command.trim();
     if (!trimmed || coreState === "thinking") return;
-    addLog("user", trimmed);
     setCommand("");
+    if (handleMusicCommand(trimmed)) return;
+    addLog("user", trimmed);
     void askBrain(trimmed);
   };
 
@@ -576,6 +677,27 @@ function JarvisTerminal() {
                   <div className="mt-3 flex items-center justify-between font-mono text-[8px]"><span className={message.priority === "PRIORITY" ? "text-warning" : "text-muted-foreground"}>{message.priority}</span><span className="text-muted-foreground">{message.time}</span></div>
                 </button>
               ))}
+            </div>
+          </Panel>
+
+          <Panel title="MUSIC SUBSYSTEM" code="AUD.09" icon={<Music />}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+                <span>{musicLabel ? `NOW LOADED · ${musicLabel}` : "SPOTIFY UPLINK"}</span>
+                <span className={spotifyReady ? "text-success" : "text-warning"}>{spotifyReady ? "● READY" : "● SYNCING"}</span>
+              </div>
+              <div ref={spotifyMountRef} className="min-h-[152px] w-full overflow-hidden border border-border/60 bg-console" />
+              <div className="grid grid-cols-2 gap-2">
+                {MUSIC_PRESETS.map((preset) => (
+                  <Button key={preset.id} variant="outline" className="h-9 border-border bg-secondary/30 font-mono text-[9px] text-muted-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary" onClick={() => playMusic(preset)}>
+                    <Play className="size-3" /> {preset.label}
+                  </Button>
+                ))}
+              </div>
+              <Button variant="outline" className="h-9 w-full border-primary/30 bg-primary/5 font-mono text-[10px] text-primary hover:bg-primary/15" onClick={toggleMusicPlayback}>
+                {musicPaused ? <Play className="size-3" /> : <Pause className="size-3" />} {musicPaused ? "RESUME" : "PAUSE"}
+              </Button>
+              <p className="font-mono text-[8px] leading-relaxed text-muted-foreground/70">Say “play some jazz” or “pause the music”. Full tracks play when you’re signed into Spotify in this browser; otherwise 30-second previews.</p>
             </div>
           </Panel>
 
