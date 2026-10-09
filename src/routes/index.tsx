@@ -14,6 +14,7 @@ import {
   Mail,
   MemoryStick,
   Mic,
+  MicOff,
   Network,
   Power,
   Radio,
@@ -276,63 +277,73 @@ function JarvisTerminal() {
   }, [logs]);
 
   const recognitionRef = useRef<any>(null);
+  const [muted, setMuted] = useState(false);
+  const [listenTick, setListenTick] = useState(0);
+  const askBrainRef = useRef<(p: string) => Promise<void>>(async () => {});
+  const unsupportedRef = useRef(false);
 
-  const activateCore = () => {
-    if (coreState === "listening") {
-      recognitionRef.current?.stop();
+  // Always-on listening: open the mic whenever idle and not muted; close it while thinking/speaking so he doesn't hear himself.
+  useEffect(() => {
+    const busy = coreState === "thinking" || coreState === "responding" || speaking;
+    if (muted || busy) {
+      if (recognitionRef.current) { try { recognitionRef.current.abort(); } catch { /* noop */ } recognitionRef.current = null; }
       return;
     }
-    if (coreState !== "idle") return;
+    if (recognitionRef.current || unsupportedRef.current) return;
     const w = window as any;
     const Recognition = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Recognition) {
+      unsupportedRef.current = true;
       addLog("system", "Voice recognition isn't supported in this browser. Please use Chrome, Edge or Safari, or type your command below.");
       return;
     }
     const rec = new Recognition();
     rec.lang = "en-GB";
     rec.interimResults = true;
-    rec.continuous = false;
+    rec.continuous = true;
     rec.maxAlternatives = 1;
-    let finalText = "";
-    let errored = false;
+    let sent = false;
     rec.onresult = (e: any) => {
+      if (sent) return;
       let interim = "";
+      let finalText = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         if (r.isFinal) finalText += r[0].transcript;
         else interim += r[0].transcript;
       }
-      setCommand((finalText + interim).trim());
-    };
-    rec.onerror = (e: any) => {
-      errored = true;
-      const msg = e.error === "not-allowed" || e.error === "service-not-allowed"
-        ? "Microphone access denied, Sir. Please allow the microphone in your browser and try again."
-        : e.error === "no-speech" ? "I didn't catch anything, Sir. Tap the core and try again." : `Voice link error: ${e.error}.`;
-      addLog("system", msg);
-    };
-    rec.onend = () => {
-      recognitionRef.current = null;
+      if (interim.trim()) { setCoreState("listening"); setCommand(interim.trim()); }
       const text = finalText.trim();
-      setCommand("");
       if (text) {
+        sent = true;
+        setCommand("");
         addLog("user", `[voice] ${text}`);
-        void askBrain(text);
-      } else {
-        if (!errored) addLog("system", "No speech detected. Voice channel closed.");
-        setCoreState("idle");
+        try { rec.abort(); } catch { /* noop */ }
+        void askBrainRef.current(text);
       }
     };
+    rec.onerror = (e: any) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        setMuted(true);
+        addLog("system", "Microphone access denied, Sir. Allow the microphone in your browser, then tap Unmute.");
+      }
+    };
+    rec.onend = () => {
+      if (recognitionRef.current === rec) recognitionRef.current = null;
+      if (!sent) { setCommand(""); setCoreState((s) => (s === "listening" ? "idle" : s)); }
+      window.setTimeout(() => setListenTick((t) => t + 1), 250);
+    };
     recognitionRef.current = rec;
-    try {
-      rec.start();
-      setCoreState("listening");
-      addLog("system", "Voice channel open. Listening... (tap the core again to finish)");
-    } catch {
-      recognitionRef.current = null;
-      addLog("system", "Unable to open the voice channel.");
-    }
+    try { rec.start(); } catch { recognitionRef.current = null; }
+  }, [muted, coreState, speaking, listenTick]);
+
+  useEffect(() => () => { try { recognitionRef.current?.abort(); } catch { /* noop */ } }, []);
+
+  const toggleMute = () => {
+    setMuted((m) => {
+      addLog("system", m ? "Microphone live. I'm listening, Sir." : "Microphone muted. I won't listen until you unmute.");
+      return !m;
+    });
   };
 
   /** Streams the OpenAI reply into the console and forwards each finished sentence to ElevenLabs. */
@@ -388,6 +399,8 @@ function JarvisTerminal() {
     setCoreState("idle");
   };
 
+  askBrainRef.current = askBrain;
+
   const submitCommand = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = command.trim();
@@ -406,7 +419,7 @@ function JarvisTerminal() {
   const timeText = now
     ? `${now.toLocaleTimeString("en-GB", { hour12: false })}.${String(now.getMilliseconds()).padStart(3, "0")}`
     : "--:--:--.---";
-  const coreLabel = useMemo(() => ({ idle: "SYSTEM READY", listening: "LISTENING...", thinking: "PROCESSING...", responding: "RESPONSE SENT" })[coreState], [coreState]);
+  const coreLabel = useMemo(() => ({ idle: muted ? "MUTED" : "LISTENING", listening: "LISTENING...", thinking: "PROCESSING...", responding: "RESPONSE SENT" })[coreState], [coreState, muted]);
 
   return (
     <main className="terminal-shell min-h-screen overflow-hidden bg-background text-foreground">
@@ -494,16 +507,19 @@ function JarvisTerminal() {
           <Panel title="NEURAL COMMAND INTERFACE" code="CORE.ACTIVE" icon={<Mic />} className="overflow-visible">
             <div className="grid items-center gap-6 py-3 xl:grid-cols-[240px_1fr]">
               <div className="flex flex-col items-center">
-                <button ref={coreRef} className={`jarvis-core core-${coreState}${speaking ? " core-speaking" : ""}`} onClick={activateCore} disabled={coreState !== "idle"} aria-label="Activate J.A.R.V.I.S. voice core">
+                <button ref={coreRef} className={`jarvis-core core-${coreState}${speaking ? " core-speaking" : ""}`} onClick={toggleMute} aria-label={muted ? "Unmute J.A.R.V.I.S." : "Mute J.A.R.V.I.S."}>
                   <span className="core-orbit core-orbit-one" />
                   <span className="core-orbit core-orbit-two" />
                   <span className="core-radar" />
-                  <span className="core-center"><Mic className="size-7" /></span>
+                  <span className="core-center">{muted ? <MicOff className="size-7" /> : <Mic className="size-7" />}</span>
                 </button>
                 <div className="mt-5 h-9 text-center">
                   <p className="font-display text-xs text-primary text-glow">{coreLabel}</p>
-                  <p className="mt-1 font-mono text-[9px] text-muted-foreground">{coreState === "idle" ? "TAP CORE TO INITIALIZE VOICE LINK" : "NEURAL LINK ENGAGED"}</p>
+                  <p className="mt-1 font-mono text-[9px] text-muted-foreground">{muted ? "MIC MUTED · TAP UNMUTE TO LISTEN" : coreState === "idle" ? "ALWAYS LISTENING · JUST SPEAK" : "NEURAL LINK ENGAGED"}</p>
                 </div>
+                <button type="button" onClick={toggleMute} aria-pressed={muted} className={`mt-3 flex items-center gap-2 border px-3 py-1.5 font-mono text-[10px] ${muted ? "border-destructive text-destructive" : "border-primary text-primary"}`}>
+                  {muted ? <MicOff className="size-3" /> : <Mic className="size-3" />} {muted ? "UNMUTE" : "MUTE"}
+                </button>
                 {coreState === "listening" && <div className="mt-2 flex h-8 items-center gap-1" aria-label="Audio waveform">{[1,2,3,4,5,6,7,8,9].map((bar) => <span key={bar} className={`wave-bar wave-${bar}`} />)}</div>}
               </div>
 
