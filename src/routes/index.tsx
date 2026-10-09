@@ -412,9 +412,11 @@ function JarvisTerminal() {
       if (text) {
         sent = true;
         setCommand("");
-        addLog("user", `[voice] ${text}`);
         try { rec.abort(); } catch { /* noop */ }
-        void askBrainRef.current(text);
+        if (!musicCmdRef.current(text)) {
+          addLog("user", `[voice] ${text}`);
+          void askBrainRef.current(text);
+        }
       }
     };
     rec.onerror = (e: any) => {
@@ -496,12 +498,16 @@ function JarvisTerminal() {
 
   askBrainRef.current = askBrain;
 
+  const musicCmdRef = useRef(handleMusicCommand);
+  musicCmdRef.current = handleMusicCommand;
+
   const submitCommand = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = command.trim();
     if (!trimmed || coreState === "thinking") return;
-    addLog("user", trimmed);
     setCommand("");
+    if (handleMusicCommand(trimmed)) return;
+    addLog("user", trimmed);
     void askBrain(trimmed);
   };
 
