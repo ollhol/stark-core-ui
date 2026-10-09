@@ -306,6 +306,77 @@ function JarvisTerminal() {
   const askBrainRef = useRef<(p: string) => Promise<void>>(async () => {});
   const unsupportedRef = useRef(false);
 
+  // ---- Music subsystem (Spotify embed) ----
+  const spotifyMountRef = useRef<HTMLDivElement>(null);
+  const spotifyRef = useRef<SpotifyController | null>(null);
+  const [spotifyReady, setSpotifyReady] = useState(false);
+  const [musicPaused, setMusicPaused] = useState(true);
+  const [musicLabel, setMusicLabel] = useState<string | null>(null);
+  const musicLabelRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.onSpotifyIframeApiReady = (api) => {
+      if (!spotifyMountRef.current || spotifyRef.current) return;
+      api.createController(spotifyMountRef.current, { uri: MUSIC_PRESETS[0].uri, width: "100%", height: 152 }, (controller) => {
+        spotifyRef.current = controller;
+        setSpotifyReady(true);
+        controller.addListener("playback_update", (e) => setMusicPaused(e.data.isPaused));
+      });
+    };
+    if (!document.getElementById("spotify-iframe-api")) {
+      const script = document.createElement("script");
+      script.id = "spotify-iframe-api";
+      script.src = "https://open.spotify.com/embed/iframe-api/v1";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  const playMusic = (preset: MusicPreset) => {
+    const controller = spotifyRef.current;
+    if (!controller) { addLog("alert", "Music subsystem is still initialising, Sir. One moment."); return; }
+    controller.loadUri(preset.uri);
+    controller.play();
+    musicLabelRef.current = preset.label;
+    setMusicLabel(preset.label);
+    addLog("system", `Music subsystem: now playing ${preset.label}.`);
+  };
+
+  const toggleMusicPlayback = () => {
+    const controller = spotifyRef.current;
+    if (!controller) { addLog("alert", "Music subsystem is still initialising, Sir."); return; }
+    controller.togglePlay();
+    addLog("system", musicPaused ? "Resuming playback." : "Playback paused.");
+  };
+
+  /** Intercepts music voice/typed commands before they reach the AI brain. Returns true when handled. */
+  const handleMusicCommand = (raw: string): boolean => {
+    const text = raw.toLowerCase();
+    const wantsMusic = text.includes("music") || text.includes("song") || text.includes("play") || text.includes("spotify");
+    if (!wantsMusic) return false;
+    if (text.includes("pause") || text.includes("stop") || text.includes("quiet") || text.includes("silence")) {
+      spotifyRef.current?.pause();
+      addLog("user", raw);
+      addLog("system", "Playback paused, Sir.");
+      void speak("Pausing the music, Sir.");
+      return true;
+    }
+    if (text.includes("resume") || text.includes("unpause") || text.includes("continue")) {
+      spotifyRef.current?.play();
+      addLog("user", raw);
+      addLog("system", "Resuming playback.");
+      void speak("Resuming playback, Sir.");
+      return true;
+    }
+    const preset = MUSIC_PRESETS.find((p) => text.includes(p.id) || text.includes(p.label.toLowerCase().split(" ").pop() ?? ""));
+    const chosen = preset ?? MUSIC_PRESETS[0];
+    addLog("user", raw);
+    playMusic(chosen);
+    void speak(preset ? `Playing ${preset.label.toLowerCase()}, Sir.` : "Very good, Sir. A little Back in Black, I think.");
+    return true;
+  };
+
   // Always-on listening: open the mic whenever idle and not muted; close it while thinking/speaking so he doesn't hear himself.
   useEffect(() => {
     const busy = coreState === "thinking" || coreState === "responding" || speaking;
