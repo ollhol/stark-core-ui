@@ -318,7 +318,7 @@ function JarvisTerminal() {
     if (typeof window === "undefined") return;
     window.onSpotifyIframeApiReady = (api) => {
       if (!spotifyMountRef.current || spotifyRef.current) return;
-      api.createController(spotifyMountRef.current, { uri: MUSIC_PRESETS[0].uri, width: "100%", height: 152 }, (controller) => {
+      api.createController(spotifyMountRef.current, { uri: MUSIC_PRESETS[0]!.uri, width: "100%", height: 152 }, (controller) => {
         spotifyRef.current = controller;
         setSpotifyReady(true);
         controller.addListener("playback_update", (e) => setMusicPaused(e.data.isPaused));
@@ -370,7 +370,7 @@ function JarvisTerminal() {
       return true;
     }
     const preset = MUSIC_PRESETS.find((p) => text.includes(p.id) || text.includes(p.label.toLowerCase().split(" ").pop() ?? ""));
-    const chosen = preset ?? MUSIC_PRESETS[0];
+    const chosen = preset ?? MUSIC_PRESETS[0]!;
     addLog("user", raw);
     playMusic(chosen);
     void speak(preset ? `Playing ${preset.label.toLowerCase()}, Sir.` : "Very good, Sir. A little Back in Black, I think.");
