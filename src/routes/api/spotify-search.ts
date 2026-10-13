@@ -50,7 +50,14 @@ export const Route = createFileRoute("/api/spotify-search")({
           if (!res.ok) {
             const body = await res.text();
             console.error(`Spotify search failed [${res.status}]: ${body}`);
-            return Response.json({ error: `Spotify search failed [${res.status}]` }, { status: 502 });
+            // Return 200 with an error field so the UI handles it gracefully instead of tripping the error boundary.
+            const premiumBlocked = res.status === 403 && body.includes("premium");
+            return Response.json({
+              error: premiumBlocked
+                ? "Spotify requires a Premium account on the developer app before search works."
+                : `Spotify search failed [${res.status}]`,
+              premiumBlocked,
+            });
           }
           const data = (await res.json()) as {
             tracks?: { items?: Array<{ uri: string; name: string; artists: Array<{ name: string }> }> };
