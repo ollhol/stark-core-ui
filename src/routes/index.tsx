@@ -334,13 +334,41 @@ function JarvisTerminal() {
   }, []);
 
   const playMusic = (preset: MusicPreset) => {
+    playUri(preset.uri, preset.label);
+  };
+
+  const playUri = (uri: string, label: string) => {
     const controller = spotifyRef.current;
     if (!controller) { addLog("alert", "Music subsystem is still initialising, Sir. One moment."); return; }
-    controller.loadUri(preset.uri);
+    controller.loadUri(uri);
     controller.play();
-    musicLabelRef.current = preset.label;
-    setMusicLabel(preset.label);
-    addLog("system", `Music subsystem: now playing ${preset.label}.`);
+    musicLabelRef.current = label;
+    setMusicLabel(label);
+    addLog("system", `Music subsystem: now playing ${label}.`);
+  };
+
+  /** Searches Spotify's full catalogue for a requested song/artist and plays the top match. */
+  const searchAndPlay = async (query: string) => {
+    addLog("system", `Searching Spotify for "${query}"...`);
+    try {
+      const res = await fetch("/api/spotify-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
+      });
+      const data = (await res.json()) as { uri?: string; name?: string; artist?: string; error?: string };
+      if (!res.ok || !data.uri || !data.name) {
+        addLog("alert", `I couldn't find that on Spotify, Sir. ${data.error ?? ""}`.trim());
+        void speak("I'm afraid I couldn't find that on Spotify, Sir.");
+        return;
+      }
+      const label = `${data.name} — ${data.artist ?? "Unknown artist"}`;
+      playUri(data.uri, label.toUpperCase());
+      void speak(`Now playing ${data.name} by ${data.artist ?? "unknown artist"}, Sir.`);
+    } catch {
+      addLog("alert", "Spotify search is unavailable at the moment, Sir.");
+      void speak("Spotify search is unavailable at the moment, Sir.");
+    }
   };
 
   const toggleMusicPlayback = () => {
@@ -370,10 +398,23 @@ function JarvisTerminal() {
       return true;
     }
     const preset = MUSIC_PRESETS.find((p) => text.includes(p.id) || text.includes(p.label.toLowerCase().split(" ").pop() ?? ""));
-    const chosen = preset ?? MUSIC_PRESETS[0]!;
     addLog("user", raw);
-    playMusic(chosen);
-    void speak(preset ? `Playing ${preset.label.toLowerCase()}, Sir.` : "Very good, Sir. A little Back in Black, I think.");
+    if (preset) {
+      playMusic(preset);
+      void speak(`Playing ${preset.label.toLowerCase()}, Sir.`);
+      return true;
+    }
+    // No preset matched — search Spotify's full catalogue for the requested song/artist.
+    const query = raw
+      .replace(/\b(please|can you|could you|play|put on|listen to|music|song|track|spotify|some|the|a|an|me|for|by|on)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!query) {
+      playMusic(MUSIC_PRESETS[0]!);
+      void speak("Very good, Sir. A little Back in Black, I think.");
+      return true;
+    }
+    void searchAndPlay(query);
     return true;
   };
 

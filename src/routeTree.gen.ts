@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiSpotifySearchRouteImport } from './routes/api/spotify-search'
 import { Route as ApiTtsRouteImport } from './routes/api/tts'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpotifySearchRoute = ApiSpotifySearchRouteImport.update({
+  id: '/api/spotify-search',
+  path: '/api/spotify-search',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTtsRoute = ApiTtsRouteImport.update({
   id: '/api/tts',
   path: '/api/tts',
@@ -32,30 +38,34 @@ const ApiTtsRoute = ApiTtsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/spotify-search': typeof ApiSpotifySearchRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/spotify-search': typeof ApiSpotifySearchRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/spotify-search': typeof ApiSpotifySearchRoute
   '/api/tts': typeof ApiTtsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat' | '/api/tts'
+  fullPaths: '/' | '/api/chat' | '/api/spotify-search' | '/api/tts'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat' | '/api/tts'
-  id: '__root__' | '/' | '/api/chat' | '/api/tts'
+  to: '/' | '/api/chat' | '/api/spotify-search' | '/api/tts'
+  id: '__root__' | '/' | '/api/chat' | '/api/spotify-search' | '/api/tts'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiSpotifySearchRoute: typeof ApiSpotifySearchRoute
   ApiTtsRoute: typeof ApiTtsRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/spotify-search': {
+      id: '/api/spotify-search'
+      path: '/api/spotify-search'
+      fullPath: '/api/spotify-search'
+      preLoaderRoute: typeof ApiSpotifySearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/tts': {
       id: '/api/tts'
       path: '/api/tts'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiSpotifySearchRoute: ApiSpotifySearchRoute,
   ApiTtsRoute: ApiTtsRoute,
 }
 export const routeTree = rootRouteImport
