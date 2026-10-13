@@ -398,10 +398,23 @@ function JarvisTerminal() {
       return true;
     }
     const preset = MUSIC_PRESETS.find((p) => text.includes(p.id) || text.includes(p.label.toLowerCase().split(" ").pop() ?? ""));
-    const chosen = preset ?? MUSIC_PRESETS[0]!;
     addLog("user", raw);
-    playMusic(chosen);
-    void speak(preset ? `Playing ${preset.label.toLowerCase()}, Sir.` : "Very good, Sir. A little Back in Black, I think.");
+    if (preset) {
+      playMusic(preset);
+      void speak(`Playing ${preset.label.toLowerCase()}, Sir.`);
+      return true;
+    }
+    // No preset matched — search Spotify's full catalogue for the requested song/artist.
+    const query = raw
+      .replace(/\b(please|can you|could you|play|put on|listen to|music|song|track|spotify|some|the|a|an|me|for|by|on)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!query) {
+      playMusic(MUSIC_PRESETS[0]!);
+      void speak("Very good, Sir. A little Back in Black, I think.");
+      return true;
+    }
+    void searchAndPlay(query);
     return true;
   };
 
