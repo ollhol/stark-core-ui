@@ -52,6 +52,25 @@ class CompanionTests(unittest.TestCase):
             data = json.loads(response.read())
         self.assertFalse(data["execution_enabled"])
 
+    def test_health_cors_only_for_known_dashboard(self):
+        request = Request(self.base + "/health", headers={"Origin": "https://stark-core-ui.lovable.app"})
+        with urlopen(request, timeout=2) as response:
+            self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "https://stark-core-ui.lovable.app")
+            self.assertFalse(json.loads(response.read())["execution_enabled"])
+
+        request = Request(self.base + "/health", headers={"Origin": "https://attacker.example"})
+        with urlopen(request, timeout=2) as response:
+            self.assertIsNone(response.headers.get("Access-Control-Allow-Origin"))
+
+    def test_health_preflight(self):
+        request = Request(
+            self.base + "/health", method="OPTIONS",
+            headers={"Origin": "https://stark-core-ui.lovable.app", "Access-Control-Request-Private-Network": "true"},
+        )
+        with urlopen(request, timeout=2) as response:
+            self.assertEqual(response.status, 204)
+            self.assertEqual(response.headers.get("Access-Control-Allow-Private-Network"), "true")
+
     def test_auth_required(self):
         self.assertEqual(self.post("dronedesk.open", token=False)[0], 401)
 
