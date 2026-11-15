@@ -158,6 +158,27 @@ function nowStamp() {
 function JarvisTerminal() {
   const [now, setNow] = useState<Date | null>(null);
   const [metrics, setMetrics] = useState({ cpu: 38, memory: 62, ping: 12 });
+  const [companionStatus, setCompanionStatus] = useState<"unchecked" | "checking" | "connected" | "unavailable">("unchecked");
+  const checkCompanion = async () => {
+    setCompanionStatus("checking");
+    try {
+      const response = await fetch("http://127.0.0.1:8765/health", {
+        method: "GET",
+        cache: "no-store",
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!response.ok) throw new Error("Health endpoint unavailable");
+      const data: unknown = await response.json();
+      if (typeof data === "object" && data !== null && "status" in data && data.status === "ok" &&
+          "execution_enabled" in data && data.execution_enabled === false) {
+        setCompanionStatus("connected");
+      } else {
+        setCompanionStatus("unavailable");
+      }
+    } catch {
+      setCompanionStatus("unavailable");
+    }
+  };
   const [coreState, setCoreState] = useState<CoreState>("idle");
   const [logs, setLogs] = useState<LogItem[]>(bootLogs);
   const [command, setCommand] = useState("");
@@ -631,6 +652,29 @@ function JarvisTerminal() {
                 </div>
                 <LockKeyhole className="size-4 text-success" />
               </div>
+            </div>
+          </Panel>
+
+          <Panel title="WINDOWS COMPANION" code="PC.02" icon={<Network />}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] text-muted-foreground">LOCAL CONNECTION</span>
+                <span role="status" className={`font-mono text-[10px] ${companionStatus === "connected" ? "text-success" : "text-muted-foreground"}`}>
+                  {companionStatus === "connected" ? "CONNECTED" : companionStatus === "checking" ? "CHECKING..." : companionStatus === "unavailable" ? "NOT VERIFIED" : "NOT CHECKED"}
+                </span>
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">
+                {companionStatus === "connected"
+                  ? "Windows companion responding. Computer control remains disabled."
+                  : "Start your Windows companion in PowerShell, then check its connection. Browser security may block automatic checks."}
+              </p>
+              <Button variant="outline" className="w-full border-primary/30 text-primary" disabled={companionStatus === "checking"} onClick={() => void checkCompanion()}>
+                {companionStatus === "checking" ? "CHECKING..." : "CHECK CONNECTION"}
+              </Button>
+              <a href="http://127.0.0.1:8765/health" target="_blank" rel="noopener noreferrer" className="block text-center font-mono text-[10px] text-primary underline underline-offset-2">
+                OPEN LOCAL HEALTH PAGE
+              </a>
+              <p className="font-mono text-[9px] text-muted-foreground">PLANNING ONLY · NO EDGE OR DRONEDESK ACTIONS</p>
             </div>
           </Panel>
 
