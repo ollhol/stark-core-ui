@@ -50,6 +50,16 @@ class JarvisHandler(BaseHTTPRequestHandler):
         payload = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        # Only the non-sensitive health endpoint is readable from the Lovable dashboard.
+        # All action endpoints remain inaccessible to remote web origins.
+        if self.path == "/health" and self.headers.get("Origin") in (
+            "https://stark-core-ui.lovable.app",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ):
+            self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(payload)))
@@ -68,6 +78,22 @@ class JarvisHandler(BaseHTTPRequestHandler):
     def authenticated(self) -> bool:
         supplied = self.headers.get("Authorization", "")
         return secrets.compare_digest(supplied, "Bearer " + self.server.companion_token)
+
+    def do_OPTIONS(self) -> None:
+        # Health-only preflight for Chromium private-network protections.
+        if self.path != "/health" or self.headers.get("Origin") not in (
+            "https://stark-core-ui.lovable.app",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ):
+            return self.send_json(403, {"error": "Origin not allowed"})
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Vary", "Origin")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_GET(self) -> None:
         if self.path == "/health":
