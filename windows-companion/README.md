@@ -45,3 +45,13 @@ python -m unittest discover -s windows-companion -p "test_*.py"
 Build a local desktop approval UI, then permit one narrowly scoped operation, such as opening the Dronedesk login page in Edge. Test with a demo account before adding any real job or invoice changes. Never approve drone flight safety or authorisations automatically.
 
 The production Lovable site and its existing AI endpoints remain unchanged by this branch.
+
+## Development-branch JARVIS interface
+
+The React JARVIS interface now has a **WINDOWS COMPANION** panel with a **CHECK CONNECTION** button and a link to the local health page. It only reads the public, non-sensitive `/health` status, and does not send the private bearer token or perform PC actions.
+
+**Important:** This panel is only on the `feature/windows-companion-foundation` branch. Your currently published Lovable app is unchanged. Test it using the branch preview or by running the frontend locally; do not merge into `main` until you're happy.
+
+After downloading the updated branch, restart the companion (Ctrl+C, then `python windows-companion/companion.py`). The new health endpoint allows read-only checks from the specifically approved Lovable origin, but your Edge browser may still restrict public-site-to-localhost requests. If the panel says **NOT VERIFIED**, open its **OPEN LOCAL HEALTH PAGE** link: if it reports `status: ok`, the companion is running regardless of the panel's browser permissions.
+
+No direct browser automation or Dronedesk access has been enabled.
